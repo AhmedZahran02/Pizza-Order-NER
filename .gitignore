@@ -1,0 +1,4 @@
+database/
+dataset/
+*.rar
+__pycache__
