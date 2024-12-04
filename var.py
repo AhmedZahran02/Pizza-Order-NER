@@ -60,9 +60,9 @@ BLACKLIST = [
     "fancy", "savor", "delight", "care"
 
     # extra
-    'the', 'and', 'or', 'with', 'but', 'within', 'to', 'by', 
+    'the', 'and', 'or', 'but', 'within', 'to', 'by', 
 
-    'id', 'ive', 'iam', 'along', 'dont', 'doesnt', 'on', 'in', 'over'
+    'id', 'ive', 'iam', 'along', 'on', 'in', 'over'
 ]
 
 PIZZA_WORDS = ["pizza", "pie", "slice"]

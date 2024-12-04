@@ -1,78 +1,9 @@
-from var    import *
+from var import *
+from preprocessor import *
 import re
 import json
 
-from nltk.stem import PorterStemmer
-stemmer = PorterStemmer()
-
-class Normalizer:
-    ''' 
-        Removes All Punctuation From The Given String 
-        Punctuation will is defined in var.py
-    '''
-    def remove_punctuations(self, TOP):
-        regex = "".join([ fr"\{punc}" for punc in PUNCTUATIONS ])
-        TOP = re.sub(fr"[{regex}]", '', TOP)
-        return TOP
-    
-    '''
-        Removes Words From The Given String Which Are Defined In var.py
-        Note: This Words Is Assumed To Be Stemmed Already
-    '''
-    def remove_words(self, TOP):
-        regex = fr"(?<=(?:\b|^))(?:{"|".join(BLACKLIST)})(?=(?:\b|&))"
-        return re.sub(fr"({regex})", '', TOP)
-
-    def replace_numbers(self, TOP):
-        regex = r'\b\d+\b'
-        TOP = re.sub(regex, 'DIGIT', TOP)
-        return TOP
-
-    '''
-        Follow Rules Of Replacing Some Words With Other In Case Of Needing
-    '''
-    def reconstruct_words(self, TOP):
-        return TOP
-    
-    '''
-        - Replace Multiple Spaces With Only One Space
-        - Removes Spaces At The Beginning And End Of The Given String
-    '''
-    def reorganize_spaces(self, TOP):
-        TOP = re.sub(r'\s+', ' ', TOP)
-        return re.sub(r'(?:\s+$)|(?:^\s+)', '', TOP)
-    
-    '''
-        Stems the given word and convert it to lowercase
-    '''
-    def stem_word(self, token):
-        return stemmer.stem(token, to_lowercase=False)
-
-    '''
-        Stems the given sentence and convert all words to lowercase
-    '''
-    def stem_sentence(self, sentence):
-        return " ".join([ self.stem_word(word) for word in sentence.split(' ') ])
-
-    '''
-        Normalizes the given sentence by performing the following steps:
-        1. Reconstructs the words using the rules defined in var
-        2. Removes punctuation defined in var
-        3. Reorganizes spaces
-        4. Stems the sentence
-        5. Returns the normalized sentence
-    '''
-    def normalize(self, sentence):
-        NEXT = self.remove_punctuations(sentence)
-        NEXT = self.remove_words(NEXT)
-        NEXT = self.replace_numbers(NEXT)
-        NEXT = self.reconstruct_words(NEXT)
-        NEXT = self.reorganize_spaces(NEXT)
-        NEXT = self.stem_sentence(NEXT)
-        return NEXT
-    
-
-class DatasetUtils:
+class NERFormatter:
     x: list[str]
     y: list[str]
     vocabulary: set
@@ -174,7 +105,7 @@ class DatasetUtils:
         SRC, TOP = object[f"{prefix}.SRC"], object[f"{prefix}.TOP"]
         du.preprocess(TOP)
 
-du = DatasetUtils()
+du = NERFormatter()
 x, y = [], []
 
 # preprocessing training data 
@@ -193,8 +124,8 @@ with open("dataset/PIZZA_train.json") as file:
     print()
 
 print("Processing Finished.... Writing Results")
-with open("database/x_train.txt", "w") as xfile:
-    with open("database/y_train.txt", "w") as yfile:
+with open("database/labeler/x_train.txt", "w") as xfile:
+    with open("database/labeler/y_train.txt", "w") as yfile:
         for words, entities in zip(x, y):
             xfile.write(",".join(words) + "\n")
             yfile.write(",".join(entities) + "\n")
@@ -218,8 +149,8 @@ with open("dataset/PIZZA_dev.json") as file:
 
 
 print("Processing Finished.... Writing Results")
-with open("database/x_dev.txt", "w") as xfile:
-    with open("database/y_dev.txt", "w") as yfile:
+with open("database/labeler/x_dev.txt", "w") as xfile:
+    with open("database/labeler/y_dev.txt", "w") as yfile:
         for words, entities in zip(x, y):
             xfile.write(",".join(words) + "\n")
             yfile.write(",".join(entities) + "\n")
@@ -227,7 +158,7 @@ with open("database/x_dev.txt", "w") as xfile:
     xfile.close()
 
 print("Writing Vocabulary")
-with open("database/vocabulary.txt", "w") as vfile:
+with open("database/labeler/vocabulary.txt", "w") as vfile:
     vfile.write("\n".join(du.vocabulary))
     vfile.close()    
 
