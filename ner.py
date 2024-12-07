@@ -21,7 +21,7 @@ class NERFormatter:
     
     def __init__(self):
         self.normalizer = Normalizer()
-        self.vocabulary = set()
+        self.vocabulary = {}
         pass
 
     def resolve_leaf_brackets(self, TOP: str):
@@ -73,17 +73,24 @@ class NERFormatter:
 
             if token in self.mapper:
                 entity, text = self.mapper[token]
+
+                if entity.startswith("NOT_NOT_"):   entity = entity[len("NOT_NOT_"):]
+                if entity == "NOT_QUANTITY":        entity = "QUANTITY"
+
                 words = text.split(" ")
                 words.remove("")
 
                 for word in words:
-                    self.vocabulary.add(word)
+                    if word not in self.vocabulary: self.vocabulary[word] = 0
+                    self.vocabulary[word] += 1
 
                 self.x.extend(words)
                 self.y.extend([entity] * len(words))
             else:
                 self.x.append(token)
-                self.vocabulary.add(token)
+                
+                if token not in self.vocabulary: self.vocabulary[token] = 0
+                self.vocabulary[token] += 1
                 
                 if token in PIZZA_WORDS:
                     self.y.append("PIZZA")
@@ -123,6 +130,7 @@ with open("dataset/PIZZA_train.json") as file:
     file.close()
     print()
 
+
 print("Processing Finished.... Writing Results")
 with open("database/labeler/x_train.txt", "w") as xfile:
     with open("database/labeler/y_train.txt", "w") as yfile:
@@ -131,6 +139,14 @@ with open("database/labeler/x_train.txt", "w") as xfile:
             yfile.write(",".join(entities) + "\n")
         yfile.close()
     xfile.close()
+
+
+print("Writing Vocabulary")
+with open("database/labeler/vocabulary.txt", "w") as vfile:
+    for voc, freq in du.vocabulary.items():
+        print (voc, freq, sep="\t")
+        vfile.write(f"{voc},{freq}\n")
+    vfile.close()   
 
 x, y = [], []
 # preprocessing dev data 
@@ -155,12 +171,7 @@ with open("database/labeler/x_dev.txt", "w") as xfile:
             xfile.write(",".join(words) + "\n")
             yfile.write(",".join(entities) + "\n")
         yfile.close()
-    xfile.close()
-
-print("Writing Vocabulary")
-with open("database/labeler/vocabulary.txt", "w") as vfile:
-    vfile.write("\n".join(du.vocabulary))
-    vfile.close()    
+    xfile.close() 
 
 print("THANK YOU FOR USING MOA PREPROCESSOR")
 

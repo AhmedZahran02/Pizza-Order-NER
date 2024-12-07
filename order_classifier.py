@@ -25,7 +25,7 @@ class OrderFormatter:
     
     def __init__(self):
         self.normalizer = Normalizer()
-        self.vocabulary = set()
+        self.vocabulary = {}
         self.mapper = {}
 
     def resolve_leaf_brackets(self, TOP: str):
@@ -63,17 +63,24 @@ class OrderFormatter:
             if token in self.mapper:
                 entity, text = self.mapper[token]
                 text = self.normalizer.reorganize_spaces(text)
+
+                if entity.startswith("NOT_NOT_"): entity = entity[len("NOT_NOT_"):]
+
                 words : list = text.split(" ")
 
                 for word in words:
-                    self.vocabulary.add(word)
+                    if word not in self.vocabulary: self.vocabulary[word] = 0
+                    self.vocabulary[word] += 1
 
                 self.x.extend(words)
                 self.y.extend([entity] * (len(words) - 1))
                 self.y.append("EOO") # End Of Order
             else:
                 self.x.append(token)
-                self.vocabulary.add(token)
+
+                if token not in self.vocabulary: self.vocabulary[token] = 0
+                self.vocabulary[token] += 1
+
                 self.y.append("NONE")
 
     def preprocess(self, TOP):
@@ -121,6 +128,16 @@ with open("database/grouper/x_train.txt", "w") as xfile:
         yfile.close()
     xfile.close()
 
+
+
+print("Writing Vocabulary")
+with open("database/labeler/vocabulary.txt", "w") as vfile:
+    for voc, freq in of.vocabulary.items():
+        print (voc, freq, sep="\t")
+        vfile.write(f"{voc},{freq}\n")
+    vfile.close()   
+
+
 x, y = [], []
 # preprocessing dev data 
 # results is saved in database/(x, y)_dev.txt
@@ -144,12 +161,7 @@ with open("database/grouper/x_dev.txt", "w") as xfile:
             xfile.write(",".join(words) + "\n")
             yfile.write(",".join(entities) + "\n")
         yfile.close()
-    xfile.close()
-
-print("Writing Vocabulary")
-with open("database/grouper/vocabulary.txt", "w") as vfile:
-    vfile.write("\n".join(of.vocabulary))
-    vfile.close()    
+    xfile.close()  
 
 print("THANK YOU FOR USING MOA PREPROCESSOR")
 

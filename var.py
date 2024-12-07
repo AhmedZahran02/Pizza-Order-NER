@@ -1,6 +1,9 @@
 from nltk.stem import PorterStemmer
 stemmer = PorterStemmer()
 
+################################################################
+################### PREPROCESSOR PARAMETERS ####################
+################################################################
 
 PUNCTUATIONS=[
     ".",  # Period
@@ -57,7 +60,9 @@ BLACKLIST = [
     "appreciate", "respect", "idolize", "enjoy", 
     "value", "revere", "treasure", "favor", 
     "prefer", "esteem", "venerate", "worship", 
-    "fancy", "savor", "delight", "care"
+    "fancy", "savor", "delight", "care",
+
+    "give", "take", "find", "let", "cook",
 
     # extra
     'the', 'and', 'or', 'but', 'within', 'to', 'by', 
@@ -67,7 +72,12 @@ BLACKLIST = [
 
 PIZZA_WORDS = ["pizza", "pie", "slice"]
 
-
-
 BLACKLIST    = list(set([ stemmer.stem(x) for x in BLACKLIST ]))
 PIZZA_WORDS  = list(set([ stemmer.stem(x) for x in PIZZA_WORDS]))
+
+################################################################
+###################### MODEL PARAMETERS ########################
+################################################################
+
+EMBEDDING_SIZE = 100
+HIDDEN_SIZE = 128
