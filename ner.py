@@ -18,10 +18,12 @@ class NERFormatter:
     pizza_orders        : dict
     # all groups of the entity (DRINKORDER)
     drink_orders        : dict
-    
+    # statistics 
+    statistics          : dict 
     def __init__(self):
         self.normalizer = Normalizer()
         self.vocabulary = {}
+        self.statistics = {}
         pass
 
     def resolve_leaf_brackets(self, TOP: str):
@@ -84,13 +86,22 @@ class NERFormatter:
                     if word not in self.vocabulary: self.vocabulary[word] = 0
                     self.vocabulary[word] += 1
 
+                    if word not in self.statistics: self.statistics[word] = {}
+                    if entity not in self.statistics[word]: self.statistics[word][entity] = 0
+                    self.statistics[word][entity] += 1
+
                 self.x.extend(words)
                 self.y.extend([entity] * len(words))
             else:
+                entity = "NONE"
                 self.x.append(token)
                 
                 if token not in self.vocabulary: self.vocabulary[token] = 0
                 self.vocabulary[token] += 1
+                
+                if token not in self.statistics: self.statistics[token] = {}
+                if entity not in self.statistics[token]: self.statistics[token][entity] = 0
+                self.statistics[token][entity] += 1
                 
                 if token in PIZZA_WORDS:
                     self.y.append("PIZZA")
@@ -100,7 +111,7 @@ class NERFormatter:
     def preprocess(self, TOP):
         TOP                     = self.normalizer.normalize(TOP) ## PREPROCESSING STEP
         TOP                     = self.resolve_leaf_brackets(TOP)
-        TOP, complex_toppings   = self.get_keyword_brackets(TOP, keyword="COMPLEXTOPPING")
+        TOP, complex_groups     = self.get_keyword_brackets(TOP, keyword="COMPLEXTOPPING")
         TOP, not_groups         = self.get_keyword_brackets(TOP, keyword="NOT")
         TOP, pizza_orders       = self.get_keyword_brackets(TOP, keyword="PIZZAORDER")
         TOP, drink_orders       = self.get_keyword_brackets(TOP, keyword="DRINKORDER")
@@ -130,23 +141,29 @@ with open("dataset/PIZZA_train.json") as file:
     file.close()
     print()
 
+with open("database/statistics/stats.txt", "w") as file:
+    for word, dict in du.statistics.items():
+        for entity, freq in dict.items():
+            file.write(f"{word},{entity},{freq}")
+            file.write("\n")
+    file.close()
 
-print("Processing Finished.... Writing Results")
-with open("database/labeler/x_train.txt", "w") as xfile:
-    with open("database/labeler/y_train.txt", "w") as yfile:
-        for words, entities in zip(x, y):
-            xfile.write(",".join(words) + "\n")
-            yfile.write(",".join(entities) + "\n")
-        yfile.close()
-    xfile.close()
+# print("Processing Finished.... Writing Results")
+# with open("database/labeler/x_train.txt", "w") as xfile:
+#     with open("database/labeler/y_train.txt", "w") as yfile:
+#         for words, entities in zip(x, y):
+#             xfile.write(",".join(words) + "\n")
+#             yfile.write(",".join(entities) + "\n")
+#         yfile.close()
+#     xfile.close()
 
 
-print("Writing Vocabulary")
-with open("database/labeler/vocabulary.txt", "w") as vfile:
-    for voc, freq in du.vocabulary.items():
-        print (voc, freq, sep="\t")
-        vfile.write(f"{voc},{freq}\n")
-    vfile.close()   
+# print("Writing Vocabulary")
+# with open("database/labeler/vocabulary.txt", "w") as vfile:
+#     for voc, freq in du.vocabulary.items():
+#         print (voc, freq, sep="\t")
+#         vfile.write(f"{voc},{freq}\n")
+#     vfile.close()   
 
 x, y = [], []
 # preprocessing dev data 
@@ -164,14 +181,14 @@ with open("dataset/PIZZA_dev.json") as file:
     file.close()
 
 
-print("Processing Finished.... Writing Results")
-with open("database/labeler/x_dev.txt", "w") as xfile:
-    with open("database/labeler/y_dev.txt", "w") as yfile:
-        for words, entities in zip(x, y):
-            xfile.write(",".join(words) + "\n")
-            yfile.write(",".join(entities) + "\n")
-        yfile.close()
-    xfile.close() 
+# print("Processing Finished.... Writing Results")
+# with open("database/labeler/x_dev.txt", "w") as xfile:
+#     with open("database/labeler/y_dev.txt", "w") as yfile:
+#         for words, entities in zip(x, y):
+#             xfile.write(",".join(words) + "\n")
+#             yfile.write(",".join(entities) + "\n")
+#         yfile.close()
+#     xfile.close() 
 
 print("THANK YOU FOR USING MOA PREPROCESSOR")
 

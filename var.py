@@ -70,6 +70,9 @@ BLACKLIST = [
     'id', 'ive', 'iam', 'along', 'on', 'in', 'over'
 ]
 
+
+
+
 PIZZA_WORDS = ["pizza", "pie", "slice"]
 
 BLACKLIST    = list(set([ stemmer.stem(x) for x in BLACKLIST ]))
