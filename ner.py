@@ -76,6 +76,8 @@ class NERFormatter:
             if token in self.mapper:
                 entity, text = self.mapper[token]
 
+                text = text.lower()
+
                 if entity.startswith("NOT_NOT_"):   entity = entity[len("NOT_NOT_"):]
                 if entity == "NOT_QUANTITY":        entity = "QUANTITY"
 
@@ -93,6 +95,7 @@ class NERFormatter:
                 self.x.extend(words)
                 self.y.extend([entity] * len(words))
             else:
+                token = token.lower()
                 entity = "NONE"
                 self.x.append(token)
                 
@@ -148,22 +151,22 @@ with open("database/statistics/stats.txt", "w") as file:
             file.write("\n")
     file.close()
 
-# print("Processing Finished.... Writing Results")
-# with open("database/labeler/x_train.txt", "w") as xfile:
-#     with open("database/labeler/y_train.txt", "w") as yfile:
-#         for words, entities in zip(x, y):
-#             xfile.write(",".join(words) + "\n")
-#             yfile.write(",".join(entities) + "\n")
-#         yfile.close()
-#     xfile.close()
+print("Processing Finished.... Writing Results")
+with open("database/labeler/x_train.txt", "w") as xfile:
+    with open("database/labeler/y_train.txt", "w") as yfile:
+        for words, entities in zip(x, y):
+            xfile.write(",".join(words) + "\n")
+            yfile.write(",".join(entities) + "\n")
+        yfile.close()
+    xfile.close()
 
 
-# print("Writing Vocabulary")
-# with open("database/labeler/vocabulary.txt", "w") as vfile:
-#     for voc, freq in du.vocabulary.items():
-#         print (voc, freq, sep="\t")
-#         vfile.write(f"{voc},{freq}\n")
-#     vfile.close()   
+print("Writing Vocabulary")
+with open("database/labeler/vocabulary.txt", "w") as vfile:
+    for voc, freq in du.vocabulary.items():
+        print (voc, freq, sep="\t")
+        vfile.write(f"{voc},{freq}\n")
+    vfile.close()   
 
 x, y = [], []
 # preprocessing dev data 
@@ -181,14 +184,14 @@ with open("dataset/PIZZA_dev.json") as file:
     file.close()
 
 
-# print("Processing Finished.... Writing Results")
-# with open("database/labeler/x_dev.txt", "w") as xfile:
-#     with open("database/labeler/y_dev.txt", "w") as yfile:
-#         for words, entities in zip(x, y):
-#             xfile.write(",".join(words) + "\n")
-#             yfile.write(",".join(entities) + "\n")
-#         yfile.close()
-#     xfile.close() 
+print("Processing Finished.... Writing Results")
+with open("database/labeler/x_dev.txt", "w") as xfile:
+    with open("database/labeler/y_dev.txt", "w") as yfile:
+        for words, entities in zip(x, y):
+            xfile.write(",".join(words) + "\n")
+            yfile.write(",".join(entities) + "\n")
+        yfile.close()
+    xfile.close() 
 
 print("THANK YOU FOR USING MOA PREPROCESSOR")
 

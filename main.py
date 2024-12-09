@@ -50,19 +50,31 @@ def get_full_entity_recognition(mapped_sentence, recognized_entities, length):
     return full_recognized_entities
 
 def get_orders_boundaries(mapped_sentence: list[str], full_recognized_entities: list[str], recognized_orders: list[str], sentence: str):
-    orders = []
+    pizza_orders = []
+    drink_orders = []
+
     pizza_order = []
     words = sentence.split()
 
+    count_p, count_d = 0, 0
     for i in range(len(words)):
         token = mapped_sentence[i]
         pizza_order.append((words[i], full_recognized_entities[i]))
         if token.startswith("/"):
             entity_id = int(token[1:])
             if recognized_orders[entity_id] == "EOO":
-                orders.append(pizza_order)
+                if count_d > count_p:
+                    drink_orders.append(pizza_order)
+                else:
+                    pizza_orders.append(pizza_order)
                 pizza_order = []
-    return orders
+                count_p = 0
+                count_d = 0
+            elif recognized_orders[entity_id] == "PIZZAORDER":
+                count_p += 1
+            elif recognized_orders[entity_id] == "DRINKORDER":
+                count_d += 1
+    return pizza_orders, drink_orders
 
 '''
 A Valid Pizza Order Should Have The Following
@@ -73,7 +85,6 @@ def is_valid_pizza_order(order):
     for _, entity in order:
         # order can't have more than one number field
         has_number += (entity == "NUMBER")
-    
     return True
     
 
@@ -121,12 +132,47 @@ def create_pizza_order(order, is_pizza=True):
 
         i += 1
 
-    return (
-        topping_object,
-        number,
-        style,
-        size
-    )
+    return {
+        "ALL_TOPPINGS": topping_object,
+        "NUMBER": number,
+        "STYLE": style,
+        "SIZE": size
+    }
+
+# input for this function will be a signle order (that was identified)
+def create_drink_order(order, is_pizza=True):
+    i = 0
+    drink_type = []
+    container_type = []
+    volume = []
+    number = []
+    size = []
+
+    while i < len(order):
+        if order[i][1] == "NUMBER":
+            number.append(order[i][0])
+        
+        elif order[i][1] == "SIZE":
+            size.append(order[i][0])
+
+        elif order[i][1] == "VOLUME":
+            volume.append(order[i][0])
+
+        elif order[i][1] == "DRINKTYPE":
+            drink_type.append(order[i][0])
+        
+        elif order[i][1] == "CONTAINERTYPE":
+            container_type.append(order[i][0])
+        
+        i += 1
+
+    return {
+        "Drink Type": " ".join(drink_type),
+        "Container Type": " ".join(container_type),
+        "Volume": " ".join(volume),
+        "Number": " ".join(number),
+        "Size": " ".join(size)
+    }
 
 testcases = []
 with open("dataset/PIZZA_test.txt") as f:
@@ -140,7 +186,7 @@ for test in testcases:
     full_recognized_entities = get_full_entity_recognition(mapped_sentence, recognized_entities, length)
     
     recognized_orders, preprocessed = OR.predict(test)[:length]
-    orders = get_orders_boundaries(mapped_sentence, full_recognized_entities, recognized_orders, test)
+    pizza_orders, drink_orders = get_orders_boundaries(mapped_sentence, full_recognized_entities, recognized_orders, test)
 
     print(test)
     print("================================")
@@ -148,17 +194,27 @@ for test in testcases:
     print("================================")
     print(" ".join(recognized_orders))
 
-    for order in orders:
+    print("Pizza Orders")
+    print("================================")
+    for order in pizza_orders:
         if not is_valid_pizza_order(order): continue
         json_order = create_pizza_order(order)
         print(order)
         print("================================")
         print(json_order)
-    input("Press To Keep Going")
-    os.system("cls")
+
+    print("Drink Orders")
+    print("================================")
+    for order in drink_orders:
+        json_order = create_drink_order(order, False)
+        print(order)
+        print("================================")
+        print(json_order)
     
 
 
+    input("Press To Keep Going")
+    os.system("cls")
 
 
 

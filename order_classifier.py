@@ -62,6 +62,8 @@ class OrderFormatter:
 
             if token in self.mapper:
                 entity, text = self.mapper[token]
+
+                text = text.lower()
                 text = self.normalizer.reorganize_spaces(text)
 
                 if entity.startswith("NOT_NOT_"): entity = entity[len("NOT_NOT_"):]
@@ -76,6 +78,7 @@ class OrderFormatter:
                 self.y.extend([entity] * (len(words) - 1))
                 self.y.append("EOO") # End Of Order
             else:
+                token = token.lower()
                 self.x.append(token)
 
                 if token not in self.vocabulary: self.vocabulary[token] = 0

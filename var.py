@@ -70,7 +70,7 @@ BLACKLIST = [
     'id', 'ive', 'iam', 'along', 'on', 'in', 'over'
 ]
 
-
+# BLACKLIST = []
 
 
 PIZZA_WORDS = ["pizza", "pie", "slice"]
