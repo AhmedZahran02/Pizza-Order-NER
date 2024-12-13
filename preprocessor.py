@@ -1,7 +1,42 @@
 from var import *
 import re
+from nltk.tokenize import word_tokenize
+from nltk import pos_tag
 from nltk.stem import PorterStemmer
+from nltk.stem import WordNetLemmatizer
+from nltk import download
+from nltk.corpus import wordnet
+import spacy
+nlp = spacy.load("en_core_web_sm")
+
+
+download('wordnet')
+download('omw-1.4')
+
 stemmer = PorterStemmer()
+lemmatizer = WordNetLemmatizer()
+
+def get_wordnet_pos(tag):
+    if tag.startswith('J'):
+        return wordnet.ADJ
+    elif tag.startswith('V'):
+        return wordnet.VERB
+    elif tag.startswith('N'):
+        return wordnet.NOUN 
+    elif tag.startswith('R'):
+        return wordnet.ADV 
+    else:
+        return wordnet.NOUN
+
+
+def POS_rules(word, tag):
+    original_tag = tag[ tag.find("_") + 1 : ]    
+    if original_tag in [ "CC", "CD", "VB", "VBD", "VBG", "VBN", "IN" ] :
+        return tag
+    elif original_tag in [ "EX", "LS", "MD", "PRP", "PRP$", "RBR", "RBS", "SYM", "TO", "UH" ]:
+        return None
+    else:
+        return lemmatizer.lemmatize( word, get_wordnet_pos(original_tag) )
 
 class Normalizer:
     ''' 
@@ -10,7 +45,7 @@ class Normalizer:
     '''
     def remove_punctuations(self, TOP):
         regex = "".join([ fr"\{punc}" for punc in PUNCTUATIONS ])
-        TOP = re.sub(fr"[{regex}]", '', TOP)
+        TOP = re.sub(fr"[{regex}]", ' ', TOP)
         return TOP
     
     '''
@@ -18,8 +53,11 @@ class Normalizer:
         Note: This Words Is Assumed To Be Stemmed Already
     '''
     def remove_words(self, TOP):
-        regex = fr"(?<=(?:\b|^))(?:{"|".join(BLACKLIST)})(?=(?:\b|&))"
-        return re.sub(fr"({regex})", '', TOP)
+        NEXT = []
+        for word, tag in TOP:
+            replacement = POS_rules(word, tag)
+            if replacement is not None: NEXT.append((word, tag))
+        return NEXT
 
     def replace_numbers(self, TOP):
         regex = r'\b(?:\d+|a)\b' # TODO: revise this
@@ -50,7 +88,34 @@ class Normalizer:
         Stems the given sentence and convert all words to lowercase
     '''
     def stem_sentence(self, sentence):
+        NEXT = ""
+        for word, tag in sentence:
+            NEXT += self.stem_word(word) + " "
+            
         return " ".join([ self.stem_word(word) for word in sentence.split(' ') ])
+    
+    def lemmatize_sentence(self, TOP):
+        NEXT = []
+        for word, tag in TOP:
+            NEXT.append((self.lemmatize_word(word, get_wordnet_pos(tag)), tag))
+        return NEXT
+    
+    def lemmatize_word(self, word, tag):
+        return lemmatizer.lemmatize(word, tag)
+
+    def attach_pos_tags(self, sentence):
+        doc = nlp(sentence)
+        NEXT = []
+        for token in doc:
+            if token.tag_ == "IN" and token.text in NEGATING_IN:
+                NEXT.append((token.text, "NEG_" + token.tag_))
+            elif get_wordnet_pos(token.tag_) == wordnet.VERB and token.text in NEGATING_VERBS:
+                NEXT.append((token.text, "NEG_" + token.tag_))
+            elif token.tag_ == "CD" and token.text not in SMALL_NUMBERS:
+                NEXT.append((token.text, "LG_CD"))
+            else:
+                NEXT.append((token.text, token.tag_))
+        return NEXT
 
     '''
         Normalizes the given sentence by performing the following steps:
@@ -60,12 +125,15 @@ class Normalizer:
         4. Stems the sentence
         5. Returns the normalized sentence
     '''
-    def normalize(self, sentence):
-        NEXT = self.remove_punctuations(sentence) 
-        NEXT = self.remove_words(NEXT)
-        NEXT = self.replace_numbers(NEXT)
+    def normalize(self, sentence, lemmatize=True):
+        NEXT = sentence.lower()
         NEXT = self.reconstruct_words(NEXT)
         NEXT = self.reorganize_spaces(NEXT)
-        NEXT = self.stem_sentence(NEXT)
-        return NEXT
+        NEXT = self.remove_punctuations(NEXT) 
+        NEXT = self.attach_pos_tags(NEXT)
+        NEXT = self.remove_words(NEXT)
+        return self.lemmatize_sentence(NEXT) if lemmatize else NEXT
     
+# norm = Normalizer()
+# normalized = norm.normalize("i want two large banana pepperoni pizzas avoid any onions and no potato")
+# print(normalized)

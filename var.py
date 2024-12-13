@@ -12,7 +12,6 @@ PUNCTUATIONS=[
     ":",  # Colon
     "!",  # Exclamation Mark
     "?",  # Question Mark
-    "'",  # Apostrophe
     '"',  # Quotation Marks
     "_",  # Em Dash
     "-",  # Hyphen
@@ -39,43 +38,55 @@ PUNCTUATIONS=[
     "`"   # Grave Accent
 ]
 
-BLACKLIST = [
-    # human references
-    'i', 'me', 'my', 'mine', 'myself',
-    'you', 'your', 'yourself',
-    'he', 'him', 'hi', 'himself',
-    'she', 'her', 'herself',
-    'it', 'itself',
-    'we', 'us', 'our', 'ourselv',
-    'they', 'them', 'their', 'themselv',
-    'person', 'peopl', 'human',
-    'individu', 'man', 'men',
-    'woman', 'women', 'child', 'children',
-    'adult', 'someon', 'somebodi',
-    'anyon', 'anybodi', 'everyon', 'everybodi',
-    'no on', 'nobodi'
-
-    # admiring something (who cares cry about it)
-    "love", "like", "admire", "adore", "cherish", 
-    "appreciate", "respect", "idolize", "enjoy", 
-    "value", "revere", "treasure", "favor", 
-    "prefer", "esteem", "venerate", "worship", 
-    "fancy", "savor", "delight", "care",
-
-    "give", "take", "find", "let", "cook",
-
-    # extra
-    'the', 'and', 'or', 'but', 'within', 'to', 'by', 
-
-    'id', 'ive', 'iam', 'along', 'on', 'in', 'over'
+NEGATING_VERBS = [
+    "avoid",
+    "deny",
+    "refuse",
+    "prevent",
+    "reject",
+    "stop",
+    "prohibit",
+    "resist",
+    "escape",
+    "forbid",
+    "hinder",
+    "discourage",
+    "preclude",
+    "neglect",
+    "escape",
+    "block",
+    "suppress",
+    "oppose",
+    "shun",
+    "ignore",
+    "eliminate",
+    "exclude",
+    "abstain",
+    "detest",
+    "proscribe",
+    "terminate",
+    "obstruct",
+    "decline",
+    "abandon",
+    "disapprove",
+    "withhold",
+    "counteract",
+    "nullify",
+    "refrain"
 ]
 
-# BLACKLIST = []
+NEGATING_IN = [
+    "without", "against", "despite", "except", "beyond", "excluding"
+]
 
+SMALL_NUMBERS = [
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"
+]
 
 PIZZA_WORDS = ["pizza", "pie", "slice"]
 
-BLACKLIST    = list(set([ stemmer.stem(x) for x in BLACKLIST ]))
+BLACKLIST    = list(set([ stemmer.stem(x) for x in [] ]))
 PIZZA_WORDS  = list(set([ stemmer.stem(x) for x in PIZZA_WORDS]))
 
 ################################################################
