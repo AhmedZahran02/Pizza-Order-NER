@@ -2,7 +2,7 @@ from var import *
 from preprocessor import *
 import re
 import json
-
+import random
 
 class NERFormatter:
     x: list[str]
@@ -23,9 +23,11 @@ class NERFormatter:
     statistics          : dict 
     def __init__(self):
         self.normalizer = Normalizer()
-        self.vocabulary = {}
+        self.vocabulary = set()
         self.statistics = {}
-        self.debug = 0
+        
+        self.PIZZA_FILE = open("regenerator/PIZZA.txt", "a")
+        self.DRINK_FILE = open("regenerator/DRINK.txt", "a")
         pass
 
     def resolve_leaf_brackets(self, TOP: str):
@@ -40,6 +42,23 @@ class NERFormatter:
             NEXT = NEXT.replace(bracket, f"/{id}")
             # split only the first space (TOPPING x y z) => entity = TOPPING, text = x y z
             entity, text = bracket[1: -1].split(" ", 1) 
+            if random.random() <= 0.5:
+                if entity == "TOPPING":
+                    text = random.sample(TOPPINGS, 1)[0]
+                elif entity == "STYLE":
+                    text = random.sample(STYLE, 1)[0]
+                elif entity == "DRINKTYPE":
+                    text = random.sample(DRINK_TYPES, 1)[0]
+                elif entity == "QUANTITY":
+                    text = random.sample(QUANTITIES, 1)[0]
+
+            if random.random() <= 0.1:
+                words = text.split()
+                wordIdx = random.randint(0, len(words) - 1)
+                word = list(words[wordIdx])
+                random.shuffle(word)
+                words[wordIdx] = "DISCARD_" + "".join(word)
+                text = " ".join([word for word in words if word != ""])
 
             self.mapper[f"/{id}"] = (entity, text)
         
@@ -53,9 +72,9 @@ class NERFormatter:
             sentence, ent = [], []
             for item in text.split(" "):
                 if item in self.mapper:
-                    words : list = self.mapper[item][1].split(" ")
-                    words.remove("")
-
+                    temp_words : list = self.mapper[item][1].split(" ")
+                    words = [ word for word in temp_words if word != "" ]
+                    
                     sentence.extend(words)
                     ent.extend([ self.mapper[item][0] ] * len(words))
 
@@ -64,87 +83,67 @@ class NERFormatter:
                 else:
                     sentence.append(item)
                     ent.append("NONE")
-            group.append((sentence, ent))
+            group.append((text, ent))
             TOP = TOP.replace(match, text)
         return TOP, group
-    
 
-    def formulate_test_case(self, TOP):
+    def formulate_test_case(self, TOP, type):
         x = []
         y = []
-
-        self.debug += 1
 
         for token in TOP.split(" "):
             if token == "": continue
 
             if token in self.mapper:
                 entity, text = self.mapper[token]
+
+                text = text.lower()
+                text = self.normalizer.reorganize_spaces(text)
+
                 if entity.startswith("NOT_NOT_"):   entity = entity[len("NOT_NOT_"):]
-                if entity == "NOT_QUANTITY":        entity = "QUANTITY"
 
-                words = text.split(" "); words.remove("")
+                words = [word for word in text.split(" ") if word != ""]
+                if "" in words: raise "WTF"
 
-                for word in words:
-                    if word not in self.vocabulary: self.vocabulary[word] = 0
-                    self.vocabulary[word] += 1
+                for i in range(len(words)):
+                    word = words[i]
+                    if word.startswith("discard_"): 
+                        words[i] = word[len("discard_") : ]
+                    else:
+                        self.vocabulary.add(word)
 
                 x.extend(words)
-                y.extend([entity] * len(words))
+                
+                if len(words) > 1:
+                    y.append(f"B_{entity}")
+                    if len(words) - 2 > 0: y.extend([entity] * (len(words) - 2))
+                    y.append(f"E_{entity}")
+                else:
+                    y.append(f"E_{entity}")
             else:
+                token = token.lower()
                 entity = "NONE"
                 x.append(token)
                 
-                if token not in self.vocabulary: self.vocabulary[token] = 0
-                self.vocabulary[token] += 1
+                if random.random() > 0.2:
+                    self.vocabulary.add(token)
                 
-                if token in PIZZA_WORDS:
+                if stemmer.stem(token) in PIZZA_WORDS:
                     y.append("PIZZA")
                 else:
                     y.append("NONE")
 
-        normalized = self.normalizer.normalize(" ".join(x), lemmatize=False)
-        self.x = []
-        self.y = []
-        self.tags = []
-
-        it = 0
-        norm_it = 0
-        while norm_it < len(normalized):
-            word, tag = normalized[norm_it]
-            # this will be used for words like don't it will be seperated to 2 different words  
-            try:
-                while not x[it].startswith(word): it += 1 
-            except:
-                print(f"Error: {self.debug} not found in x")
-                quit()
-            length = len( word_tokenize(x[it]) ) 
-
-            while length > 0:
-                self.x.append( (word, tag) )
-                self.y.append(y[it])
-
-                norm_it += 1
-                if norm_it == len(normalized): break
-                word, tag = normalized[norm_it]
-
-                length -= 1
-
-
-        print(self.x)
-
-        for i, (word, tag) in  enumerate(self.x):
-            resolved = POS_rules(word, tag)
-            self.x[i] = resolved
-            self.tags.append(tag)
-
-        print(self.x)
-        print(self.y)
-            
+        if type == "PIZZA":
+            self.xPizza.append(x)
+            self.yPizza.append(y)
+            self.PIZZA_FILE.write( " ".join(x) + "\n" )
+        else:
+            self.xDrink.append(x)
+            self.yDrink.append(y)
+            self.DRINK_FILE.write( " ".join(x) + "\n" )
 
     def preprocess(self, TOP):
-        # TOP                     = self.normalizer.normalize(TOP) ## PREPROCESSING STEP
-        TOP                     = self.normalizer.reorganize_spaces(TOP)
+        TOP                     = self.normalizer.normalize(TOP) ## PREPROCESSING STEP
         TOP                     = self.resolve_leaf_brackets(TOP)
         TOP, complex_groups     = self.get_keyword_brackets(TOP, keyword="COMPLEXTOPPING")
         TOP, not_groups         = self.get_keyword_brackets(TOP, keyword="NOT")
@@ -152,28 +151,32 @@ class NERFormatter:
         TOP, drink_orders       = self.get_keyword_brackets(TOP, keyword="DRINKORDER")
         TOP, _                  = self.get_keyword_brackets(TOP, keyword="ORDER")
         TOP                     = self.normalizer.reorganize_spaces(TOP) ## PREPROCESSING STEP
-        self.formulate_test_case(TOP)
+
+        self.xPizza = []
+        self.yPizza = []
+        self.xDrink = []
+        self.yDrink = []
+
+        for order in pizza_orders:
+            self.formulate_test_case(order[0], "PIZZA")
+
+        for order in drink_orders:
+            self.formulate_test_case(order[0], "DRINK")
 
     def extract(self, object, prefix):
         SRC, TOP = object[f"{prefix}.SRC"], object[f"{prefix}.TOP"]
         du.preprocess(TOP)
 
-# POS part of speech tagging
-
-TOP = "(ORDER (PIZZAORDER (NUMBER five ) (SIZE medium ) pizzas with (TOPPING tomatoes ) and (TOPPING ham ) ) )"
-TOP = "(ORDER can i have (PIZZAORDER (NUMBER one ) pizza without (NOT (TOPPING pineapple ) ) and with (TOPPING olives ) (STYLE thin crust ) ) please )"
-TOP = "(ORDER can i have (PIZZAORDER (NUMBER one ) pizza avoid adding any (NOT (TOPPING pineapple ) ) and with (TOPPING olives ) (STYLE thin crust ) ) please )"
-TOP = "(ORDER (PIZZAORDER (SIZE large ) pie with (TOPPING green pepper ) and with (COMPLEX_TOPPING (QUANTITY extra ) (TOPPING peperonni ) ) ) )"
-
-SRC = "MD RB VB a medium pizza with mushrooms and chicken and please avoid sausage"
-TOP = "NONE NONE NONE NUMBER \2 pizza with \3 and \4 and please avoid \5"
+TOP = "(ORDER i need to order (PIZZAORDER (NUMBER one ) (SIZE large ) (STYLE vegetarian ) pizza with (COMPLEX_TOPPING (QUANTITY extra ) (TOPPING banana peppers ) ) ) )"
 du = NERFormatter()
 # du.preprocess(TOP)
+# print(du.xPizza)
+# print(du.yPizza)
+# print(du.vocabulary)
 # quit()
 
-x = []
-y = []
-
+xPizza, yPizza = [], []
+xDrink, yDrink = [], []
 # preprocessing training data 
 # results is saved in database/(x, y)_train.txt
 done = 0
@@ -182,32 +185,30 @@ with open("dataset/PIZZA_train.json") as file:
     for line in file:
         obj = json.loads(line.strip())
         du.extract(obj, "train")
-        x.append(du.x)
-        y.append(du.y)
+        xDrink.extend(du.xDrink)
+        yDrink.extend(du.yDrink)
 
-        print(du.x)
-        print(du.y)
-        print(du.tags)
-        print("=================================================================")
-
+        xPizza.extend(du.xPizza)
+        yPizza.extend(du.yPizza)
         done += 1
-        if done % 1000 == 0:
-            quit()
         print(done, end='\r')
     file.close()
     print()
 
-with open("database/statistics/stats.txt", "w") as file:
-    for word, dict in du.statistics.items():
-        for entity, freq in dict.items():
-            file.write(f"{word},{entity},{freq}")
-            file.write("\n")
-    file.close()
-
 print("Processing Finished.... Writing Results")
-with open("database/labeler/x_train.txt", "w") as xfile:
-    with open("database/labeler/y_train.txt", "w") as yfile:
-        for words, entities in zip(x, y):
+with open("database/PizzaLabeler/x_train.txt", "w+") as xfile:
+    with open("database/PizzaLabeler/y_train.txt", "w+") as yfile:
+        for words, entities in zip(xPizza, yPizza):
+            xfile.write(",".join(words) + "\n")
+            yfile.write(",".join(entities) + "\n")
+        yfile.close()
+    xfile.close()
+
+    
+print("Processing Finished.... Writing Results")
+with open("database/DrinkLabeler/x_train.txt", "w") as xfile:
+    with open("database/DrinkLabeler/y_train.txt", "w") as yfile:
+        for words, entities in zip(xDrink, yDrink):
             xfile.write(",".join(words) + "\n")
             yfile.write(",".join(entities) + "\n")
         yfile.close()
@@ -215,13 +216,13 @@ with open("database/labeler/x_train.txt", "w") as xfile:
 
 
 print("Writing Vocabulary")
-with open("database/labeler/vocabulary.txt", "w") as vfile:
-    for voc, freq in du.vocabulary.items():
-        print (voc, freq, sep="\t")
-        vfile.write(f"{voc},{freq}\n")
+with open("database/vocabulary.txt", "w") as vfile:
+    for voc in du.vocabulary:
+        vfile.write(f"{voc}\n")
     vfile.close()   
 
-x, y = [], []
+xPizza, yPizza = [], []
+xDrink, yDrink = [], []
 # preprocessing dev data 
 # results is saved in database/(x, y)_dev.txt
 done = 0
@@ -230,21 +231,35 @@ with open("dataset/PIZZA_dev.json") as file:
     for line in file:
         obj = json.loads(line.strip())
         du.extract(obj, "dev")
-        x.append(du.x)
-        y.append(du.y)
+
+        xDrink.extend(du.xDrink)
+        yDrink.extend(du.yDrink)
+
+        xPizza.extend(du.xPizza)
+        yPizza.extend(du.yPizza)
         done += 1
         print(done, end='\r')
     file.close()
 
 
 print("Processing Finished.... Writing Results")
-with open("database/labeler/x_dev.txt", "w") as xfile:
-    with open("database/labeler/y_dev.txt", "w") as yfile:
-        for words, entities in zip(x, y):
+with open("database/PizzaLabeler/x_dev.txt", "w") as xfile:
+    with open("database/PizzaLabeler/y_dev.txt", "w") as yfile:
+        for words, entities in zip(xPizza, yPizza):
             xfile.write(",".join(words) + "\n")
             yfile.write(",".join(entities) + "\n")
         yfile.close()
-    xfile.close() 
+    xfile.close()
+
+    
+print("Processing Finished.... Writing Results")
+with open("database/DrinkLabeler/x_dev.txt", "w") as xfile:
+    with open("database/DrinkLabeler/y_dev.txt", "w") as yfile:
+        for words, entities in zip(xDrink, yDrink):
+            xfile.write(",".join(words) + "\n")
+            yfile.write(",".join(entities) + "\n")
+        yfile.close()
+    xfile.close()
 
 print("THANK YOU FOR USING MOA PREPROCESSOR")
 

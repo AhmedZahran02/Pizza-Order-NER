@@ -4,6 +4,7 @@ from nltk.stem import PorterStemmer
 
 import re
 import json
+import random
 
 stemmer = PorterStemmer()
 
@@ -25,7 +26,7 @@ class OrderFormatter:
     
     def __init__(self):
         self.normalizer = Normalizer()
-        self.vocabulary = {}
+        self.vocabulary = set()
         self.mapper = {}
 
     def resolve_leaf_brackets(self, TOP: str):
@@ -33,7 +34,26 @@ class OrderFormatter:
         matches = re.findall(NE_brackets_regex, TOP)
 
         for bracket in matches:
-            _, text = bracket[1: -1].split(" ", 1) 
+            entity, text = bracket[1: -1].split(" ", 1) 
+            
+            if random.random() <= 0.5:
+                if entity == "TOPPING":
+                    text = random.sample(TOPPINGS, 1)[0]
+                elif entity == "STYLE":
+                    text = random.sample(STYLE, 1)[0]
+                elif entity == "DRINKTYPE":
+                    text = random.sample(DRINK_TYPES, 1)[0]
+                elif entity == "QUANTITY":
+                    text = random.sample(QUANTITIES, 1)[0]
+
+            if random.random() <= 0.1:
+                words = text.split()
+                wordIdx = random.randint(0, len(words) - 1)
+                word = list(words[wordIdx])
+                random.shuffle(word)
+                words[wordIdx] = "DISCARD_" + "".join(word)
+                text = " ".join([word for word in words if word != ""])
+                
             TOP = TOP.replace(bracket, text)
         
         return TOP
@@ -68,40 +88,74 @@ class OrderFormatter:
 
                 if entity.startswith("NOT_NOT_"): entity = entity[len("NOT_NOT_"):]
 
-                words : list = text.split(" ")
+                words = [word for word in text.split(" ") if word != ""]
+                if "" in words: raise "WTF"
 
-                for word in words:
-                    if word not in self.vocabulary: self.vocabulary[word] = 0
-                    self.vocabulary[word] += 1
+                for i in range(len(words)):
+                    word = words[i]
+                    if word.startswith("discard_"): 
+                        words[i] = word[len("discard_") : ]
+                    else:
+                        self.vocabulary.add(word)
 
                 self.x.extend(words)
-                self.y.extend([entity] * (len(words) - 1))
-                self.y.append("EOO") # End Of Order
+
+                if len(words) > 1:
+                    self.y.append(f"B_{entity}")
+                    if len(words) - 2 > 0: self.y.extend([entity] * (len(words) - 2))
+                    self.y.append(f"E_{entity}")
+                else:
+                    self.y.append(f"E_{entity}")
+                    
             else:
                 token = token.lower()
                 self.x.append(token)
+                
+                if random.random() > 0.2:
+                    self.vocabulary.add(token)
 
-                if token not in self.vocabulary: self.vocabulary[token] = 0
-                self.vocabulary[token] += 1
+                if stemmer.stem(token) in PIZZA_WORDS:
+                    self.y.append("PIZZA")
+                else:
+                    self.y.append("NONE")
 
-                self.y.append("NONE")
+    def apply_shuffling(self, TOP):
+        words = TOP.split(" ")
+        brackets_indices = [idx for idx in range(len(words)) if re.match(r"/\d+", words[idx]) ]
+        indices_copy = brackets_indices.copy()
+        random.shuffle(indices_copy)
+        
+        NEXT = []
+        for i in range(len(words)):
+            if i in brackets_indices:
+                idx = brackets_indices.index(i)
+                NEXT.append(words[indices_copy[idx]])
+            else:
+                NEXT.append(words[i])
+        
+        return " ".join(NEXT)
 
     def preprocess(self, TOP):
         TOP = self.normalizer.normalize(TOP) ## PREPROCESSING STEP
         TOP = self.resolve_leaf_brackets(TOP)
+        TOP = self.normalizer.reorganize_spaces(TOP)
+        original = TOP
         TOP = self.remove_keywords(TOP, ["TOPPING", "NUMBER", "QUANTITY", "STYLE", "DRINKTYPE", "CONTAINERTYPE"])
         TOP = self.remove_keywords(TOP, ["COMPLEXTOPPING"])
         TOP = self.remove_keywords(TOP, ["NOT"])
         TOP = self.include_classes(TOP, ["PIZZAORDER", "DRINKORDER"])
         TOP = self.remove_keywords(TOP, ["ORDER"])
-        TOP = self.normalizer.reorganize_spaces(TOP) ## PREPROCESSING STEP
+        TOP = self.normalizer.reorganize_spaces(TOP)
+
+        
+        if random.random() < 0.5:
+            TOP = self.apply_shuffling(TOP)
+
         self.formulate_test_case(TOP)
 
     def extract(self, object, prefix):
         SRC, TOP = object[f"{prefix}.SRC"], object[f"{prefix}.TOP"]
         of.preprocess(TOP)
-
-
 
 
 of = OrderFormatter()
@@ -123,8 +177,8 @@ with open("dataset/PIZZA_train.json") as file:
     print()
 
 print("Processing Finished.... Writing Results")
-with open("database/grouper/x_train.txt", "w") as xfile:
-    with open("database/grouper/y_train.txt", "w") as yfile:
+with open("database/OrderLabeler/x_train.txt", "w") as xfile:
+    with open("database/OrderLabeler/y_train.txt", "w") as yfile:
         for words, entities in zip(x, y):
             xfile.write(",".join(words) + "\n")
             yfile.write(",".join(entities) + "\n")
@@ -134,10 +188,10 @@ with open("database/grouper/x_train.txt", "w") as xfile:
 
 
 print("Writing Vocabulary")
-with open("database/labeler/vocabulary.txt", "w") as vfile:
-    for voc, freq in of.vocabulary.items():
-        print (voc, freq, sep="\t")
-        vfile.write(f"{voc},{freq}\n")
+with open("database/vocabulary_2.txt", "w") as vfile:
+    for voc in of.vocabulary:
+        # print (voc, freq, sep="\t")
+        vfile.write(f"{voc}\n")
     vfile.close()   
 
 
@@ -158,8 +212,8 @@ with open("dataset/PIZZA_dev.json") as file:
 
 
 print("Processing Finished.... Writing Results")
-with open("database/grouper/x_dev.txt", "w") as xfile:
-    with open("database/grouper/y_dev.txt", "w") as yfile:
+with open("database/OrderLabeler/x_dev.txt", "w") as xfile:
+    with open("database/OrderLabeler/y_dev.txt", "w") as yfile:
         for words, entities in zip(x, y):
             xfile.write(",".join(words) + "\n")
             yfile.write(",".join(entities) + "\n")

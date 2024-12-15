@@ -179,12 +179,8 @@ class PizzaSemanticParser:
     def preprocess_sentence(self, sentence):
         normalizer = Normalizer()
         preprocessed = normalizer.normalize(sentence)
-        preprocessed = preprocessed.lower()
-        preprocessed = normalizer.reorganize_spaces(preprocessed)
-        preprocessed = preprocessed.replace("digit", "DIGIT")
 
-        words = preprocessed.split() 
-        indices = [self.word2idx.get(word, self.word2idx['<UNK>']) for word in words]  
+        indices = [self.word2idx.get(word, self.word2idx['<UNK>']) for word, tag in preprocessed]  
         indices = indices[:50] + [0] * (50 - len(indices)) 
 
         return torch.tensor([indices]), preprocessed

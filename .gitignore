@@ -2,3 +2,5 @@ database/
 dataset/
 *.rar
 __pycache__
+regenerator/
+test/

@@ -1,6 +1,30 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+import json
+
+from torch.utils.data import Dataset
+from test_creator import TESTGoldOutputGenerator
+
+from rich.console import Console
+from rich.columns import Columns
+from rich.panel import Panel
+
+def BeautifulPrintJson(obj):
+    pretty_json = json.dumps(obj, indent=4)
+    print(pretty_json)
+
+def BeautifulCompareJson(obj1, obj2):
+    # Pretty JSON strings
+    json1_str = json.dumps(obj1, indent=4)
+    json2_str = json.dumps(obj2, indent=4)
+
+    # Create Panels for each JSON
+    panel1 = Panel(json1_str, title="JSON 1", expand=True)
+    panel2 = Panel(json2_str, title="JSON 2", expand=True)
+
+    # Render them side by side
+    console = Console()
+    console.print(Columns([panel1, panel2]))
 
 class Loader(Dataset):
     def __init__(self, sentences, labels, word2idx, label2idx, max_len=50):
@@ -20,9 +44,9 @@ class Loader(Dataset):
         return torch.tensor(sentence), torch.tensor(label)
 
 
-class ModelArchitecture(nn.Module):
+class RNNSequenceLabeling(nn.Module):
     def __init__(self, vocab_size, embedding_dim, hidden_dim, output_dim, word2idx):
-        super(ModelArchitecture, self).__init__()
+        super(RNNSequenceLabeling, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=word2idx['<PAD>'])
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, 
                             num_layers=2, 
@@ -36,3 +60,55 @@ class ModelArchitecture(nn.Module):
         predicted = self.fc(lstm_out)
         return predicted
     
+
+class TestsetLoader:
+    idx : int
+    sentences: list[str]
+    gold_outputs: list[dict]
+
+
+    def read_file(self):
+        file = open("./database/PIZZA_test.json", "r")
+
+        for line in file:
+            obj = json.loads(line.strip())
+            self.sentences.append(obj["test.SRC"])
+            self.converter.preprocess(obj["test.TOP"])
+            self.gold_outputs.append(self.converter.y)
+        
+        file.close()
+    
+    def empty(self):
+        return self.idx >= len(self.sentences) 
+
+    def fetch_testcase(self):
+        self.idx += 1
+        return self.sentences[self.idx - 1], self.gold_outputs[self.idx - 1]
+
+    def __init__(self):
+        self.idx = 0
+        self.converter = TESTGoldOutputGenerator()
+        self.sentences = []
+        self.gold_outputs = []
+        self.read_file()
+
+def is_equal(obj1, obj2):
+        if isinstance(obj1, dict) and isinstance(obj2, dict):
+            if set(obj1.keys()) != set(obj2.keys()):
+                return False
+            return all(is_equal(obj1[key], obj2[key]) for key in obj1)
+        elif isinstance(obj1, list) and isinstance(obj2, list):
+            if len(obj1) != len(obj2):
+                return False
+
+            unmatched = obj2[:]
+            for item in obj1:
+                for candidate in unmatched:
+                    if is_equal(item, candidate):
+                        unmatched.remove(candidate)
+                        break
+                else:
+                    return False
+            return True
+        else:
+            return obj1 == obj2

@@ -1,222 +1,250 @@
-from model import PizzaSemanticParser
-from preprocessor import Normalizer
-from var import BLACKLIST
-
-import re
+import pickle
+import torch
 import os
+import re
+from classes import *
+from preprocessor import Normalizer
+normalizer = Normalizer
 
-# Initialize the semantic parser
 
-NER = PizzaSemanticParser("database/models/labeler_model/", "labeler")
-OR = PizzaSemanticParser("database/models/grouper_model/", "grouper")
+def is_num(x):
+    if normalizer.replace_numbers(x).endswith("NUM"):
+        return True
+    else:
+        return False
 
-NER.load_model_weights("models/active/NER.pth")
-OR.load_model_weights("models/active/OR.pth")
 
-# input("Press any key to continue")
-os.system("cls")
-# NER.evaluate_model()
-# OR.evaluate_model()
-# quit()
-# Load your test data
+def load_model(folder_path: str):
+    modelFile = open(f"{folder_path}/model", "rb")
+    word2idxFile = open(f"{folder_path}/word2idx", "rb")
+    idx2labelFile = open(f"{folder_path}/label2idx", "rb")
 
-def map_input_to_preprocessed(sentence:str):
-    normalizer = Normalizer()
-    tokens = sentence.split(" ")
-    id = 0
-    updated_tokens = []
-    for token in tokens:
-        no_punc = normalizer.remove_punctuations(token).lower()
-        no_punc = normalizer.stem_word(no_punc)
+    model = pickle.load(modelFile)
+    word2idx = pickle.load(word2idxFile)
+    idx2label = pickle.load(idx2labelFile)
 
-        if no_punc not in BLACKLIST:
-            updated_tokens.append(f"/{id}")
-            id += 1
+    modelFile.close()
+    word2idxFile.close()
+    idx2labelFile.close()
+
+    return model, word2idx, idx2label
+
+def preprocess_sentence(sentence, word2idx, max_len=50, preprocess=True):
+    preprocessed = sentence
+    if preprocess:
+        normalizer = Normalizer()
+        preprocessed = normalizer.remove_punctuations(sentence)
+        preprocessed = normalizer.replace_numbers_and_keep(preprocessed)
+        preprocessed = normalizer.reorganize_spaces(preprocessed)
+        preprocessed = preprocessed.lower()
+    
+    modified_sentence = restructure_model_input(preprocessed)
+    words = modified_sentence.split()
+    indices = [word2idx.get(word, word2idx['<UNK>']) for word in words] 
+    indices = indices[:max_len] + [0] * (max_len - len(indices))
+    return preprocessed, torch.tensor([indices])
+
+def restructure_model_input(sentence):
+    modified_sentence = []
+    for word in sentence.split():
+        if word.startswith("lg_num") or word.startswith("sm_num"):
+            modified_sentence.append(word[: len("lg_num")])
         else:
-            updated_tokens.append(token)
+            modified_sentence.append(word)
+    return " ".join(modified_sentence)
 
-    return updated_tokens
+def predict_labels(model, sentence, word2idx, idx2label, device, max_len=50, preprocess=True):
+    preprocessed, input_tensor = preprocess_sentence(sentence, word2idx, max_len, preprocess=preprocess)
+    input_tensor.to(device)
+    with torch.no_grad():
+        output = model(input_tensor)  # Get logits
+        predictions = output.argmax(dim=-1).squeeze(0)  # Get label indices
+    return preprocessed, [idx2label[idx.item()] for idx in predictions if idx.item() in idx2label]
 
+def get_pizza_drink_orders(SRC, order_boundaries: list):
+    PIZZA_ORDERS = []
+    DRINK_ORDERS = []
+    words = SRC.split()
+    l, r = 0, -1
+    found_end = True
+    overlapped = False
+    for i in range(len(order_boundaries)):
+        if order_boundaries[i].startswith("B_"):
+            if not found_end: 
+                r = i - 1
+                found_end = True
+                overlapped = True
+            else:
+                l = i
+                found_end = False
+        elif order_boundaries[i].startswith("E_"):
+            r = i
+            found_end = True
+        
+        if l <= r:
+            sentence = " ".join(words[l : r + 1])
+            orderType = order_boundaries[l][len("B_") : ]
+            if orderType == "PIZZAORDER":
+                PIZZA_ORDERS.append(sentence)
+            else:
+                DRINK_ORDERS.append(sentence)   
+            r = l - 1
+            if overlapped:
+                l = i
+                overlapped = False
+    
+    return PIZZA_ORDERS, DRINK_ORDERS
 
-def get_full_entity_recognition(mapped_sentence, recognized_entities, length):
-    full_recognized_entities = ["NONE"] * length
+def structure_pizza_orders(PIZZA_ORDERS):
+    global pizza_model, pizza_word2idx, pizza_idx2label
+    STRUCTURED_PIZZA_ORDERS = []
 
-    for i in range(length):
-        token = mapped_sentence[i]
-        if token.startswith("/"):
-            entity_id = int(token[1:])
-            full_recognized_entities[i] = recognized_entities[entity_id]
+    for order in PIZZA_ORDERS:
+        preprocessed, labels = predict_labels(pizza_model, order, pizza_word2idx, pizza_idx2label, "cpu", preprocess=False)
+        NUMBER = None
+        STYLE = None
+        ALL_TOPPINGS = []
+        SIZE = None
 
-    return full_recognized_entities
-
-def get_orders_boundaries(mapped_sentence: list[str], full_recognized_entities: list[str], recognized_orders: list[str], sentence: str):
-    pizza_orders = []
-    drink_orders = []
-
-    pizza_order = []
-    words = sentence.split()
-
-    count_p, count_d = 0, 0
-    for i in range(len(words)):
-        token = mapped_sentence[i]
-        pizza_order.append((words[i], full_recognized_entities[i]))
-        if token.startswith("/"):
-            entity_id = int(token[1:])
-            if recognized_orders[entity_id] == "EOO":
-                if count_d > count_p:
-                    drink_orders.append(pizza_order)
+        def singleLabelEntry(words, labels, token):
+            ANS = None
+            start_of_token = f"B_{token}"
+            end_of_token = f"E_{token}"
+            if end_of_token in labels:
+                if start_of_token in labels:
+                    ANS = " ".join(words[labels.index(start_of_token) : labels.index(end_of_token) + 1])
                 else:
-                    pizza_orders.append(pizza_order)
-                pizza_order = []
-                count_p = 0
-                count_d = 0
-            elif recognized_orders[entity_id] == "PIZZAORDER":
-                count_p += 1
-            elif recognized_orders[entity_id] == "DRINKORDER":
-                count_d += 1
-    return pizza_orders, drink_orders
+                    ANS = words[labels.index(end_of_token)]
 
-'''
-A Valid Pizza Order Should Have The Following
-    1- only one number
-'''
-def is_valid_pizza_order(order):
-    has_number = 0
-    for _, entity in order:
-        # order can't have more than one number field
-        has_number += (entity == "NUMBER")
-    return True
-    
+                return ANS if not (ANS.startswith("sm_num_") or ANS.startswith("lg_num_")) else ANS[len("lg_num_") : ] 
+            return ANS
 
-# input for this function will be a signle order (that was identified)
-def create_pizza_order(order, is_pizza=True):
-    i = 0
-    topping_object = []
+        def constructToppings(words, labels_, NOT=False):
+            start_of_token  = "B_TOPPING"   if not NOT else "B_NOT_TOPPING"
+            end_of_token    = "E_TOPPING"   if not NOT else "E_NOT_TOPPING"
 
-    take_as_quantity = False
-    quantity = []
-    topping = []
-    number = []
-    style = []
-    size = []
+            quantity_start  = "B_QUANTITY"  if not NOT else "B_NOT_QUANTITY"
+            quantity_end    = "E_QUANTITY"  if not NOT else "E_NOT_QUANTITY"
+            while end_of_token in labels_:
+                r = labels_.index(end_of_token)
+                l = labels_.index(start_of_token)       if start_of_token in labels_[ : r] else r 
 
-    while i < len(order):
-        if order[i][1] == "NUMBER":
-            number.append(order[i][0])
+                qr = labels_.index(quantity_end)        if quantity_end in labels_[ : l ] else None
+                ql = labels_.index(quantity_start)      if qr is not None and quantity_start in labels_[:qr] else qr
 
-        elif order[i][1].endswith("STYLE"):
-            style.append((order[i][0], True if order[i][1].startswith("NOT") else False))    
+                ALL_TOPPINGS.append({
+                    "Topping": " ".join( words[l: r+1] ),
+                    "Quantity": " ".join( words[ ql : qr + 1 ] ) if ql is not None else None,
+                    "NOT": NOT
+                })
+                
+                words = words[r + 1 : ]
+                labels_ = labels_[r + 1 : ]
+
+        words = preprocessed.split(" ")
+        NUMBER = singleLabelEntry(words, labels, "NUMBER")
+        STYLE = singleLabelEntry(words, labels, "STYLE")
+        STYLE = singleLabelEntry(words, labels, "NOT_STYLE") if STYLE is None else STYLE
+        SIZE = singleLabelEntry(words, labels, "SIZE")
+        constructToppings(words, labels, False)
+        constructToppings(words, labels, True)
+
+        STRUCTURED_PIZZA_ORDERS.append({
+            "NUMBER": NUMBER,
+            "SIZE": SIZE,
+            "STYLE": STYLE,
+            "AllTopping": ALL_TOPPINGS
+        })
+    return STRUCTURED_PIZZA_ORDERS
+
+def structure_drink_orders(DRINK_ORDERS):
+    global drink_model, drink_word2idx, drink_idx2label
+    STRUCTURED_DRINK_ORDERS = []
+    for order in DRINK_ORDERS:
+        preprocessed, labels = predict_labels(drink_model, order, drink_word2idx, drink_idx2label, "cpu", preprocess=False)
+
+        NUMBER = None
+        VOLUME = None
+        CONTAINER_TYPE = None
+        DRINK_TYPE = None
+
+        def singleLabelEntry(words, labels, token):
+            start_of_token = f"B_{token}"
+            end_of_token = f"E_{token}"
+            if end_of_token in labels:
+                if start_of_token in labels:
+                    ANS = " ".join(words[labels.index(start_of_token) : labels.index(end_of_token) + 1])
+                else:
+                    ANS = words[labels.index(end_of_token)]
+                return ANS if not (ANS.startswith("sm_num_") or ANS.startswith("lg_num_")) else ANS[len("lg_num_") : ] 
+            return None
+
+        words = preprocessed.split(" ")
+        NUMBER = singleLabelEntry(words, labels, "NUMBER")
         
-        elif order[i][1] == "SIZE":
-            size.append(order[i][0])
+        VOLUME = singleLabelEntry(words, labels, "VOLUME")
 
-        elif order[i][1] == "QUANTITY":
-            quantity.append(order[i][0])
-            take_as_quantity = True
+        CONTAINER_TYPE = singleLabelEntry(words, labels, "CONTAINERTYPE")
 
-        elif order[i][1].endswith("TOPPING"):
-            NOT = order[i][1].startswith("NOT")
-            while i < len(order) and (order[i][1].endswith("TOPPING") or order[i][0] in ["-"]): 
-                topping.append(order[i][0])
-                i += 1
-            
-            topping_object.append((" ".join(topping), " ".join(quantity), NOT))
+        DRINK_TYPE = singleLabelEntry(words, labels, "DRINKTYPE")
 
-            take_as_quantity = False
-            topping = []
-            quantity = []
-            i -= 1
+        STRUCTURED_DRINK_ORDERS.append({
+            "NUMBER": NUMBER,
+            "VOLUME": VOLUME,
+            "CONTAINER_TYPE": CONTAINER_TYPE,
+            "DRINK_TYPE": DRINK_TYPE
+        })
+    return STRUCTURED_DRINK_ORDERS
 
-        elif take_as_quantity:
-            quantity.append(order[i][0])
 
-        i += 1
+def rephrase_sentences():
+    pass
 
-    return {
-        "ALL_TOPPINGS": topping_object,
-        "NUMBER": number,
-        "STYLE": style,
-        "SIZE": size
+order_model, order_word2idx, order_idx2label = load_model("./pickles/ORDER")
+pizza_model, pizza_word2idx, pizza_idx2label = load_model("./pickles/PIZZA")
+drink_model, drink_word2idx, drink_idx2label = load_model("./pickles/DRINK")
+
+
+test_loader = TestsetLoader()
+
+correct = 0
+total = 0
+
+while not test_loader.empty():
+    sentence, gold = test_loader.fetch_testcase()
+    # sentence = "id like one pizza with extra osama, no mahmoud sauce, add two large coke and one moa"
+    sentence = sentence.lower()
+
+    preprocessed, labels_ = predict_labels(order_model, sentence, order_word2idx, order_idx2label, "cpu")
+    PIZZA_ORDERS, DRINK_ORDERS = get_pizza_drink_orders(preprocessed, labels_)
+    STRUCTURED_PIZZA_ORDERS = structure_pizza_orders(PIZZA_ORDERS)
+    STRUCTURED_DRINK_ORDERS = structure_drink_orders(DRINK_ORDERS)
+    ORDER = {
+        "PIZZA_ORDERS": STRUCTURED_PIZZA_ORDERS,
+        "DRINK_ORDERS": STRUCTURED_DRINK_ORDERS
     }
 
-# input for this function will be a signle order (that was identified)
-def create_drink_order(order, is_pizza=True):
-    i = 0
-    drink_type = []
-    container_type = []
-    volume = []
-    number = []
-    size = []
+    if is_equal(gold, ORDER):
+        correct += 1
+    # else:
+    #     print(sentence)
+    #     BeautifulCompareJson(gold, ORDER)
+    #     input("Press Enter To Continue")
+    #     os.system("cls")
 
-    while i < len(order):
-        if order[i][1] == "NUMBER":
-            number.append(order[i][0])
-        
-        elif order[i][1] == "SIZE":
-            size.append(order[i][0])
 
-        elif order[i][1] == "VOLUME":
-            volume.append(order[i][0])
+    total += 1
 
-        elif order[i][1] == "DRINKTYPE":
-            drink_type.append(order[i][0])
-        
-        elif order[i][1] == "CONTAINERTYPE":
-            container_type.append(order[i][0])
-        
-        i += 1
+    # print("DOING MACHINE UNLEARNING PLEASE WAIT")
+    # print(total, end="\t")
 
-    return {
-        "Drink Type": " ".join(drink_type),
-        "Container Type": " ".join(container_type),
-        "Volume": " ".join(volume),
-        "Number": " ".join(number),
-        "Size": " ".join(size)
-    }
-
-testcases = []
-with open("dataset/PIZZA_test.txt") as f:
-    for line in f:
-        testcases.append(line.strip())
-
-for test in testcases:
-    length = len(test.split())
-    recognized_entities, preprocessed = NER.predict(test)[:length]
-    mapped_sentence = map_input_to_preprocessed(test)
-    full_recognized_entities = get_full_entity_recognition(mapped_sentence, recognized_entities, length)
-    
-    recognized_orders, preprocessed = OR.predict(test)[:length]
-    pizza_orders, drink_orders = get_orders_boundaries(mapped_sentence, full_recognized_entities, recognized_orders, test)
-
-    print(test)
-    print("================================")
-    print(" ".join(full_recognized_entities))
-    print("================================")
-    print(" ".join(recognized_orders))
-
-    print("Pizza Orders")
-    print("================================")
-    for order in pizza_orders:
-        if not is_valid_pizza_order(order): continue
-        json_order = create_pizza_order(order)
-        print(order)
-        print("================================")
-        print(json_order)
-
-    print("Drink Orders")
-    print("================================")
-    for order in drink_orders:
-        json_order = create_drink_order(order, False)
-        print(order)
-        print("================================")
-        print(json_order)
     
 
-
-    input("Press To Keep Going")
-    os.system("cls")
-
-
-
-
-
+print("OK GUYS IT'S HAPPENING STAY FOKIN KALM")
+print(f"FROM TOTAL OF {total} ORDERS" )
+print(f"YOU GOT {correct} ONES RIGHT" )
+print(f"SO YOUR ACCURACY IS {(correct / total) * 100}%" )
+if correct / total > 0.7:
+    print("YOU CAN REST NOW, SOLIDER")
+else:
+    print("ReZero")
