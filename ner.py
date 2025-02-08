@@ -1,8 +1,5 @@
-from var import *
-from preprocessor import *
-import re
-import json
-import random
+from libraries import *
+from preprocessor import Normalizer
 
 class NERFormatter:
     x: list[str]
@@ -42,7 +39,10 @@ class NERFormatter:
             NEXT = NEXT.replace(bracket, f"/{id}")
             # split only the first space (TOPPING x y z) => entity = TOPPING, text = x y z
             entity, text = bracket[1: -1].split(" ", 1) 
-            if random.random() <= 0.5:
+            
+            # for 3/4 of the training data i will replace the words with another words
+            # these words are saved in var.py file
+            if random.random() <= 0.4:
                 if entity == "TOPPING":
                     text = random.sample(TOPPINGS, 1)[0]
                 elif entity == "STYLE":
@@ -51,7 +51,8 @@ class NERFormatter:
                     text = random.sample(DRINK_TYPES, 1)[0]
                 elif entity == "QUANTITY":
                     text = random.sample(QUANTITIES, 1)[0]
-
+            
+            # with 0.1 i shuffle the word so that it becomes an unknown word
             if random.random() <= 0.1:
                 words = text.split()
                 wordIdx = random.randint(0, len(words) - 1)
@@ -125,7 +126,7 @@ class NERFormatter:
                 entity = "NONE"
                 x.append(token)
                 
-                if random.random() > 0.2:
+                if random.random() > 0.4:
                     self.vocabulary.add(token)
                 
                 if stemmer.stem(token) in PIZZA_WORDS:

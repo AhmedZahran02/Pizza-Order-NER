@@ -1,30 +1,62 @@
-import torch
-import torch.nn as nn
-import json
-
-from torch.utils.data import Dataset
+from libraries import *
 from test_creator import TESTGoldOutputGenerator
+from preprocessor import Normalizer
 
-from rich.console import Console
-from rich.columns import Columns
-from rich.panel import Panel
+class JsonUtils:
+    @staticmethod
+    def log(obj):
+        # Pretty JSON strings
+        json_str = json.dumps(obj, indent=4)
 
-def BeautifulPrintJson(obj):
-    pretty_json = json.dumps(obj, indent=4)
-    print(pretty_json)
+        # Create Panels for each JSON
+        panel = Panel(json_str, title="Order", expand=True)
 
-def BeautifulCompareJson(obj1, obj2):
-    # Pretty JSON strings
-    json1_str = json.dumps(obj1, indent=4)
-    json2_str = json.dumps(obj2, indent=4)
+        # Render them side by side
+        console = Console()
+        console.print(Columns([panel]))
 
-    # Create Panels for each JSON
-    panel1 = Panel(json1_str, title="JSON 1", expand=True)
-    panel2 = Panel(json2_str, title="JSON 2", expand=True)
+    @staticmethod
+    def compare(obj1, obj2):
+        # Pretty JSON strings
+        json1_str = json.dumps(obj1, indent=4)
+        json2_str = json.dumps(obj2, indent=4)
 
-    # Render them side by side
-    console = Console()
-    console.print(Columns([panel1, panel2]))
+        # Create Panels for each JSON
+        panel1 = Panel(json1_str, title="EXPECTED", expand=True)
+        panel2 = Panel(json2_str, title="GOT", expand=True)
+
+        # Render them side by side
+        console = Console()
+        console.print(Columns([panel1, panel2]))
+
+    @staticmethod
+    def is_equal(obj1, obj2):
+            if isinstance(obj1, dict) and isinstance(obj2, dict):
+                if set(obj1.keys()) != set(obj2.keys()):
+                    return False
+                return all(JsonUtils.is_equal(obj1[key], obj2[key]) for key in obj1)
+            elif isinstance(obj1, list) and isinstance(obj2, list):
+                if len(obj1) != len(obj2):
+                    return False
+
+                unmatched = obj2[:]
+                for item in obj1:
+                    for candidate in unmatched:
+                        if JsonUtils.is_equal(item, candidate):
+                            unmatched.remove(candidate)
+                            break
+                    else:
+                        return False
+                return True
+            else:
+                return obj1 == obj2
+
+
+def is_num(x):
+    if Normalizer().replace_numbers(x).endswith("NUM"):
+        return True
+    else:
+        return False
 
 class Loader(Dataset):
     def __init__(self, sentences, labels, word2idx, label2idx, max_len=50):
@@ -78,6 +110,9 @@ class TestsetLoader:
         
         file.close()
     
+    def count(self):
+        return len(self.sentences)
+
     def empty(self):
         return self.idx >= len(self.sentences) 
 
@@ -91,24 +126,3 @@ class TestsetLoader:
         self.sentences = []
         self.gold_outputs = []
         self.read_file()
-
-def is_equal(obj1, obj2):
-        if isinstance(obj1, dict) and isinstance(obj2, dict):
-            if set(obj1.keys()) != set(obj2.keys()):
-                return False
-            return all(is_equal(obj1[key], obj2[key]) for key in obj1)
-        elif isinstance(obj1, list) and isinstance(obj2, list):
-            if len(obj1) != len(obj2):
-                return False
-
-            unmatched = obj2[:]
-            for item in obj1:
-                for candidate in unmatched:
-                    if is_equal(item, candidate):
-                        unmatched.remove(candidate)
-                        break
-                else:
-                    return False
-            return True
-        else:
-            return obj1 == obj2

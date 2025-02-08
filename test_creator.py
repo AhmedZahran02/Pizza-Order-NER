@@ -1,8 +1,6 @@
 from var import *
 from preprocessor import *
 import re
-import json
-import random
 
 class TESTGoldOutputGenerator:
     y: dict
@@ -67,9 +65,10 @@ class TESTGoldOutputGenerator:
 
         DRINK_ORDER = {
             "NUMBER": None,
+            "SIZE": None,
             "VOLUME": None,
-            "CONTAINER_TYPE": None,
-            "DRINK_TYPE": None
+            "CONTAINERTYPE": None,
+            "DRINKTYPE": None
         }
 
         words = [word for word in TOP.split(" ") if word != '']
@@ -105,24 +104,28 @@ class TESTGoldOutputGenerator:
                     DRINK_ORDER["NUMBER"] = text
 
                 elif entity.endswith("STYLE"):
-                    PIZZA_ORDER["STYLE"] = text
+                    PIZZA_ORDER["STYLE"] = [{
+                        "TYPE": text,
+                        "NOT": True if entity.startswith("NOT_") else False
+                    }]
 
                 elif entity.endswith("SIZE"):
                     PIZZA_ORDER["SIZE"] = text
+                    DRINK_ORDER["SIZE"] = text
 
                 elif entity.endswith("VOLUME"):
                     DRINK_ORDER["VOLUME"] = text
 
                 elif entity.endswith("CONTAINERTYPE"):
-                    DRINK_ORDER["CONTAINER_TYPE"] = text
+                    DRINK_ORDER["CONTAINERTYPE"] = text
 
                 elif entity.endswith("DRINKTYPE"):
-                    DRINK_ORDER["DRINK_TYPE"] = text
+                    DRINK_ORDER["DRINKTYPE"] = text
 
         if type == "PIZZA":
-            self.y["PIZZA_ORDERS"].append(PIZZA_ORDER)
+            self.y["PIZZAORDER"].append(PIZZA_ORDER)
         else:
-            self.y["DRINK_ORDERS"].append(DRINK_ORDER)
+            self.y["DRINKORDER"].append(DRINK_ORDER)
                 
                 
 
@@ -137,8 +140,8 @@ class TESTGoldOutputGenerator:
         TOP                     = self.normalizer.reorganize_spaces(TOP) 
 
         self.y = {
-            "PIZZA_ORDERS": [],
-            "DRINK_ORDERS": []
+            "PIZZAORDER": [],
+            "DRINKORDER": []
         }
 
         for order in pizza_orders:
@@ -147,13 +150,12 @@ class TESTGoldOutputGenerator:
         for order in drink_orders:
             self.formulate_test_case(order[0], "DRINK")
 
+        self.y = {
+            "ORDER": self.y
+        }
 
 # TOP = "(ORDER i need to order (PIZZAORDER (NUMBER one ) (SIZE large ) (STYLE vegetarian ) pizza with (COMPLEX_TOPPING (QUANTITY extra ) (TOPPING banana peppers ) ) ) )"
 # du = TESTGoldOutputGenerator()
 # du.preprocess(TOP)
 # print(du.y)
 # quit()
-
-
-
-

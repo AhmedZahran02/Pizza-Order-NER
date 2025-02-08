@@ -1,13 +1,7 @@
-from classes import ModelArchitecture, Loader
-from var import *
+from libraries import *
+from classes import TestsetLoader, JsonUtils
 from preprocessor import Normalizer
-import os
-from sklearn.metrics import f1_score
-import torch
-import torch.nn as nn
-import re
-from torch.utils.data import DataLoader
-from nltk.stem import PorterStemmer
+
 stemmer = PorterStemmer() 
 
 ENTITY_RECOGNIZER_PATH = "models/active/EntityRecognizer.pth"
@@ -15,185 +9,264 @@ ORDER_RECOGNIZER_PATH = "models/active/OrderRecoginzer.pth"
 
 LABELER_DATA_PATH = "database/labeler"
 GROUPER_DATA_PATH = "database/grouper"
+MAX_LEN = 50
+
+SHOW_ERRORS = False
 
 class PizzaSemanticParser:
-    def __init__(self, parameters_folder, mode="labeler"):
-        self.dataset_folder = LABELER_DATA_PATH if mode == "labeler" else GROUPER_DATA_PATH
-        self.parameters_folder = parameters_folder
-        self.load_model_parameters(labeler_mode=(True if mode == "labeler" else False))
-        self.model = ModelArchitecture(self.vocab_size, EMBEDDING_SIZE, HIDDEN_SIZE, self.output_size, self.word2idx)
-
-    def load_data(self, train=True):
-        with open(f"{self.dataset_folder}/x_{"train" if train else "dev"}.txt", 'r') as fx, open(f"{self.dataset_folder}/y_{"train" if train else "dev"}.txt", 'r') as fy:
-            sentences = fx.read().strip().split('\n')
-            labels = fy.read().strip().split('\n')
-            fx.close()
-            fy.close()
-        return [sentence.split(",") for sentence in sentences], [label.split(',') for label in labels]
-
-    def required_files_available(self):
-        required_files = [f"{self.parameters_folder}word2idx.txt", f"{self.parameters_folder}label2idx.txt"]
-        for file in required_files:
-            if not os.path.isfile(file):
-                return False
-        return True
-
-    def read_parameters_files(self):
-        self.word2idx = {}
-        self.label2idx = {}
-        self.idx2label = {}
-
-        with open(f"{self.parameters_folder}/word2idx.txt", "r") as file:
-            for line in file:
-                word, idx = line.strip().split(",")
-                self.word2idx[word] = int(idx)
-            file.close()
-
-        with open(f"{self.parameters_folder}/label2idx.txt", "r") as file:
-            for line in file:
-                label, idx = line.strip().split(",")
-                self.label2idx[label] = int(idx)
-                self.idx2label[int(idx)] = label
-            file.close()
-
-        self.vocab_size = len(self.word2idx.keys())
-        self.output_size = len(self.label2idx.keys())
+    def __init__(self):
+        self.max_len = MAX_LEN
+        self.DEBUG_ERRORS = False
+        self.DEBUG_OUTPUT = False
+        self.load_models()
     
-    def extract_parameters(self, labeler_mode=True):
-        def load_vocabulary():
-            with open(f"{self.dataset_folder}/vocabulary.txt", 'r') as fv:
-                # NOTE: every line consists of 2 parameters (the token, its frequency) so for now i igone the frequency
-                vocab = [v.strip().split(",")[0] for v in fv if v!= ""]
-                fv.close()
-            return vocab
+    # cheese => E_TOPPING
+    # cheese burger => B_TOPPING E_TOPPING
+    def singleLabelEntry(self, words, labels, token):
+        ANS = None
+        start_of_token = f"B_{token}"
+        end_of_token = f"E_{token}"
+        if end_of_token in labels:
+            if start_of_token in labels:
+                ANS = " ".join(words[labels.index(start_of_token) : labels.index(end_of_token) + 1])
+                ANS = re.sub(r"\s(\-)\s", r"-", ANS)
+            else:
+                ANS = words[labels.index(end_of_token)]
 
-        print("Loading Data, Please Wait...")
-        _, train_y  = self.load_data(train=True)
-        print("Loading Vocabulary, Please Wait...")
-        vocabulary = load_vocabulary()
-        label_vocab = {label for label_list in train_y for label in label_list}
-
-        self.word2idx = {word: idx + 2 for idx, word in enumerate(sorted(vocabulary))}
-        self.word2idx['<PAD>'] = 0
-        self.word2idx['<UNK>'] = 1
-
-        self.vocab_size     = len(vocabulary)
-        self.output_size    = len(label_vocab)
-
-        self.label2idx      = {label: idx for idx, label in enumerate(sorted(label_vocab))}
-        self.idx2label      = {idx: label for label, idx in self.label2idx.items()}
-
-        os.makedirs(os.path.dirname(self.parameters_folder), exist_ok=True)
-
-        print("Writing Model Parameters, Please Wait...")
-        with open(f"{self.parameters_folder}/word2idx.txt", "w") as file:
-            file.write("\n".join([f"{word},{idx}" for word, idx in self.word2idx.items()]))
-            file.close()
-        
-        with open(f"{self.parameters_folder}/label2idx.txt", "w") as file:
-            file.write("\n".join([f"{label},{idx}" for label, idx in self.label2idx.items()]))
-            file.close()
-
-    def load_model_parameters(self, labeler_mode=True):
-        if self.required_files_available():
-            print("Found required files... loading start")
-            self.read_parameters_files()
-        else: 
-            print("Required files not found... extracting start")
-            self.extract_parameters(labeler_mode)
-        
-        print("Model Parameters Were Loaded Successfully")
-
-    def load_model_weights(self, path):
-        self.model.load_state_dict(torch.load(path, map_location=torch.device('cpu')))
-
-    def to_evaluation_mode(self):
-        self.model.eval()
-
-    def to_training_mode(self):
-        self.model.train()
-
-    def make_data_loader(self, x, y):
-        dataset = Loader(x, y, self.word2idx, self.label2idx)
-        return DataLoader(dataset, batch_size=32, shuffle=True)
-
-    def train_model(self, epochs=10):
-        train_sentences, train_labels = self.load_data(train=True)
-        train_loader = self.make_data_loader(train_sentences, train_labels)
-
-        self.to_training_mode()
-        criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
-
-        for epoch in range(epochs):
-            total_loss = 0
-            for sentences, labels in train_loader:
-                sentences, labels = sentences, labels
-                
-                optimizer.zero_grad()
-                predictions = self.model(sentences)
-
-                loss = criterion(predictions.view(-1, self.output_size), labels.view(-1)) 
-                loss.backward()
-                optimizer.step()
-                
-                total_loss += loss.item()
-
-            print(f"Epoch {epoch + 1}/{self.num_epochs}, Loss: {total_loss / len(train_loader):.25f}")
-        torch.save(self.model.state_dict(), f"output/model.pt")
-        print("Training Done")
+            return ANS if not (ANS.startswith("sm_num_") or ANS.startswith("lg_num_")) else ANS[len("lg_num_") : ] 
+        return ANS
     
-    def evaluate_model(self):
-        dev_sentences, dev_labels = self.load_data(train=False)
-        dev_loader = self.make_data_loader(dev_sentences, dev_labels)
-        self.to_evaluation_mode()
+    def constructToppings(self, words, labels_, NOT=False):
+        start_of_token  = "B_TOPPING"   if not NOT else "B_NOT_TOPPING"
+        end_of_token    = "E_TOPPING"   if not NOT else "E_NOT_TOPPING"
+        quantity_start  = "B_QUANTITY"  if not NOT else "B_NOT_QUANTITY"
+        quantity_end    = "E_QUANTITY"  if not NOT else "E_NOT_QUANTITY"
+        ALL_TOPPINGS = []
+        while end_of_token in labels_:
+            r = labels_.index(end_of_token)
+            l = labels_.index(start_of_token)       if start_of_token in labels_[ : r] else r 
 
-        all_predictions = []
-        all_labels = []
+            qr = labels_.index(quantity_end)        if quantity_end in labels_[ : l ] else None
+            ql = labels_.index(quantity_start)      if qr is not None and quantity_start in labels_[:qr] else qr
+            
+            ALL_TOPPINGS.append({
+                "Topping": " ".join( words[l: r+1] ),
+                "Quantity": " ".join( words[ ql : qr + 1 ] ) if ql is not None else None,
+                "NOT": NOT
+            })
+            
+            words = words[r + 1 : ]
+            labels_ = labels_[r + 1 : ]
+        return ALL_TOPPINGS
 
-        total, correct = 0, 0
+    def load_models(self):
+        def load_single_model(model_folder):
+            modelFile       = open(f"{model_folder}/model", "rb")
+            word2idxFile    = open(f"{model_folder}/word2idx", "rb")
+            idx2labelFile   = open(f"{model_folder}/label2idx", "rb")
+            model           = load(modelFile)
+            word2idx        = load(word2idxFile)
+            idx2label       = load(idx2labelFile)
+            modelFile       .close()
+            word2idxFile    .close()
+            idx2labelFile   .close()
+            return model, word2idx, idx2label
+        
+        self.order_model, self.order_word2idx, self.order_idx2label = load_single_model("./pickles/ORDER")
+        torch.save(self.order_model.state_dict(), 'order_model_weights.pth')
 
+        self.pizza_model, self.pizza_word2idx, self.pizza_idx2label = load_single_model("./pickles/PIZZA")
+        torch.save(self.pizza_model.state_dict(), 'pizza_model_weights.pth')
+
+        self.drink_model, self.drink_word2idx, self.drink_idx2label = load_single_model("./pickles/DRINK")
+        torch.save(self.drink_model.state_dict(), 'drink_model_weights.pth')
+
+    def restructure_model_input(self, sentence):
+        modified_sentence = []
+        for word in sentence.split():
+            if word.startswith("lg_num") or word.startswith("sm_num"):
+                modified_sentence.append(word[: len("lg_num")])
+            else:
+                modified_sentence.append(word)
+        return " ".join(modified_sentence)
+
+    def preprocess_sentence(self, sentence, word2idx, preprocess=True):
+        preprocessed = sentence
+        if preprocess:
+            normalizer = Normalizer()
+            preprocessed = normalizer.remove_punctuations(sentence)
+            preprocessed = normalizer.replace_numbers_and_keep(preprocessed)
+            preprocessed = normalizer.reorganize_spaces(preprocessed)
+            preprocessed = preprocessed.lower()
+        
+        modified_sentence = self.restructure_model_input(preprocessed)
+        words = modified_sentence.split()
+        indices = [word2idx.get(word, word2idx['<UNK>']) for word in words] 
+        indices = indices[:self.max_len] + [0] * (self.max_len - len(indices))
+        return preprocessed, torch.tensor([indices])
+
+    def predict_labels(self, sentence, model_name, preprocess=True):
+        if model_name == "PIZZA":
+            model, idx2label, word2idx = self.pizza_model, self.pizza_idx2label, self.pizza_word2idx
+        elif model_name == "DRINK":
+            model, idx2label, word2idx = self.drink_model, self.drink_idx2label, self.drink_word2idx
+        else:
+            model, idx2label, word2idx = self.order_model, self.order_idx2label, self.order_word2idx
+
+        preprocessed, input_tensor = self.preprocess_sentence(sentence, word2idx, preprocess=preprocess)
+        input_tensor.to("cpu")
         with torch.no_grad():
-            for sentences, labels in dev_loader:
-                sentences, labels = sentences, labels
-                predictions = self.model(sentences).argmax(dim=-1)
-                
-                # Accuracy calculation
-                total += labels.numel()
-                correct += (predictions == labels).sum().item()
+            output = model(input_tensor)  # Get logits
+            predictions = output.argmax(dim=-1).squeeze(0)  # Get label indices
+        return preprocessed, [idx2label[idx.item()] for idx in predictions if idx.item() in idx2label]
 
-                # Collect predictions and true labels for F1 score calculation
-                all_predictions.extend(predictions.view(-1).tolist())
-                all_labels.extend(labels.view(-1).tolist())
+    def get_pizza_drink_orders(self, SRC, order_boundaries: list):
+        PIZZA_ORDERS = []
+        DRINK_ORDERS = []
+        words = SRC.split()
+        l, r = 0, -1
+        found_end = True
+        overlapped = False
 
-        # Calculate accuracy
-        accuracy = correct / total
+        for i in range(len(order_boundaries)):
+            if order_boundaries[i].startswith("B_"):
+                if not found_end: 
+                    r = i - 1
+                    found_end = True
+                    overlapped = True
+                else:
+                    l = i
+                    found_end = False
+            elif order_boundaries[i].startswith("E_"):
+                r = i
+                found_end = True
+            
+            if l <= r:
+                sentence = " ".join(words[l : r + 1])
+                orderType = order_boundaries[l][len("B_") : ]
+                if orderType == "PIZZAORDER":
+                    PIZZA_ORDERS.append(sentence)
+                else:
+                    DRINK_ORDERS.append(sentence)   
+                r = l - 1
+                if overlapped:
+                    l = i
+                    overlapped = False
+        
+        return PIZZA_ORDERS, DRINK_ORDERS
 
-        # Calculate F1 score
-        f1 = f1_score(all_labels, all_predictions, average='weighted')  # Use 'weighted' for handling label imbalance
+    def structure_pizza_orders(self, PIZZA_ORDERS):
+        STRUCTURED_PIZZA_ORDERS = []
 
-        # Print both metrics
-        print(f"Accuracy: {accuracy * 100:.2f}%")
-        print(f"F1 Score: {f1:.2f}")
-    
-    def preprocess_sentence(self, sentence):
-        normalizer = Normalizer()
-        preprocessed = normalizer.normalize(sentence)
+        for order in PIZZA_ORDERS:
+            preprocessed, labels = self.predict_labels(order, "PIZZA", preprocess=False)
+            
+            if self.DEBUG_OUTPUT:
+                print("================================= PIZZA MODEL OUTPUTS =================================")
+                print(preprocessed)
+                print(labels)
+            words = preprocessed.split(" ")
 
-        indices = [self.word2idx.get(word, self.word2idx['<UNK>']) for word, tag in preprocessed]  
-        indices = indices[:50] + [0] * (50 - len(indices)) 
+            NUMBER              = self.singleLabelEntry(words, labels, "NUMBER")
 
-        return torch.tensor([indices]), preprocessed
+            style_text          = self.singleLabelEntry(words, labels, "STYLE")
+            STYLE               = [{"TYPE": style_text, "NOT": False}] if style_text is not None else None
+
+            style_text          = self.singleLabelEntry(words, labels, "NOT_STYLE")
+            STYLE               = [{"TYPE": style_text, "NOT": True}] if STYLE is None and style_text is not None else STYLE
+
+            SIZE                = self.singleLabelEntry(words, labels, "SIZE")
+            
+            ALL_TOPPINGS        = self.constructToppings(words, labels, False)
+            ALL_NOT_TOPPINGS    = self.constructToppings(words, labels, True)
+
+            STRUCTURED_PIZZA_ORDERS.append({
+                "NUMBER": NUMBER,
+                "SIZE": SIZE,
+                "STYLE": STYLE,
+                "AllTopping": ALL_TOPPINGS + ALL_NOT_TOPPINGS
+            })
+        return STRUCTURED_PIZZA_ORDERS
+
+    def structure_drink_orders(self, DRINK_ORDERS):
+        STRUCTURED_DRINK_ORDERS = []
+        for order in DRINK_ORDERS:
+            preprocessed, labels = self.predict_labels(order, "DRINK", preprocess=False)
+            if self.DEBUG_OUTPUT:
+                print("================================= DRINK MODEL OUTPUTS =================================")
+                print(preprocessed)
+                print(labels)
+            words = preprocessed.split(" ")
+
+            NUMBER          = self.singleLabelEntry(words, labels, "NUMBER")
+            VOLUME          = self.singleLabelEntry(words, labels, "VOLUME")
+            SIZE            = self.singleLabelEntry(words, labels, "SIZE")
+            CONTAINER_TYPE  = self.singleLabelEntry(words, labels, "CONTAINERTYPE")
+            DRINK_TYPE      = self.singleLabelEntry(words, labels, "DRINKTYPE")
+
+            STRUCTURED_DRINK_ORDERS.append({
+                "NUMBER": NUMBER,
+                "SIZE": SIZE,
+                "VOLUME": VOLUME,
+                "CONTAINERTYPE": CONTAINER_TYPE,
+                "DRINKTYPE": DRINK_TYPE
+            })
+        return STRUCTURED_DRINK_ORDERS
 
     def predict(self, sentence: str):
-        input_tensor, preprocessed = self.preprocess_sentence(sentence)
-        with torch.no_grad():
-            output = self.model(input_tensor)  # Get logits
-            predictions = output.argmax(dim=-1).squeeze(0)  # Get label indices
-        return [self.idx2label[idx.item()] for idx in predictions if idx.item() in self.idx2label], preprocessed
+        preprocessed, labels_       = self.predict_labels(sentence, "ORDER", preprocess=True)
+        if self.DEBUG_OUTPUT:
+            print("================================= ORDER MODEL OUTPUTS =================================")
+            print(preprocessed)
+            print(labels_)
+        PIZZA_ORDERS, DRINK_ORDERS  = self.get_pizza_drink_orders(preprocessed, labels_)
+        STRUCTURED_PIZZA_ORDERS     = self.structure_pizza_orders(PIZZA_ORDERS)
+        STRUCTURED_DRINK_ORDERS     = self.structure_drink_orders(DRINK_ORDERS)
+        ORDER = {
+        "ORDER": 
+            {
+                "PIZZAORDER": STRUCTURED_PIZZA_ORDERS,
+                "DRINKORDER": STRUCTURED_DRINK_ORDERS
+            }
+        }
+        return ORDER
+    
+    def evaluate(self, DEBUG_ERRORS=False, DEBUG_OUTPUT=False):
+        test_loader = TestsetLoader()
+        correct = 0
+        finished = 0
+
+        self.DEBUG_ERRORS = DEBUG_ERRORS
+        self.DEBUG_OUTPUT = DEBUG_OUTPUT
+        
+        output_file = open("evaluation/output_dev.json", "w+")
+        with tqdm(total=test_loader.count(), desc="Manual Progress") as pbar:
+            while not test_loader.empty():
+                sentence, gold = test_loader.fetch_testcase()
+                sentence = sentence.lower()
+                prediction = self.predict(sentence)
+
+                if JsonUtils.is_equal(gold, prediction):
+                    correct += 1
+                    if DEBUG_OUTPUT:
+                        print(sentence)
+                        JsonUtils.compare(gold, prediction)
+                        input("Press Enter To Continue")
+                        os.system("cls")
+                elif DEBUG_ERRORS:
+                    print(sentence)
+                    JsonUtils.compare(gold, prediction)
+                    input("Press Enter To Continue")
+                    os.system("cls")
+                
+                json.dump(prediction, output_file)
+                output_file.write("\n")
 
 
-
-# psp = PizzaSemanticParser("cpu", "database/models/labeler_model/", "labeler")   
-# psp.load_model_weights("models/active/Entity.pth")
-# psp.evaluate_model()
+                finished += 1
+                pbar.update((finished / test_loader.count()) * 2)
+        output_file.close()
+        print("OK GUYS IT'S HAPPENING STAY FOKIN KALM")
+        print(f"FROM TOTAL OF {test_loader.count()} ORDERS" )
+        print(f"YOU GOT {correct} ONES RIGHT" )
+        print(f"SO YOUR ACCURACY IS {(correct / test_loader.count()) * 100}%" )

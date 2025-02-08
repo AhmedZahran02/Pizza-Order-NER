@@ -1,7 +1,5 @@
-from var import *
-import re
-from nltk.stem import PorterStemmer
-stemmer = PorterStemmer()
+from libraries import *
+import var
 
 class Normalizer:
     ''' 

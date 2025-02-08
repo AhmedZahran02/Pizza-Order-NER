@@ -1,6 +1,5 @@
-from nltk.stem import PorterStemmer
+from libraries import *
 stemmer = PorterStemmer()
-
 ################################################################
 ################### PREPROCESSOR PARAMETERS ####################
 ################################################################
@@ -69,6 +68,7 @@ TOPPINGS= [
 'corn',
 'zucchini',
 'eggplant',
+'egg plant',
 'garlic',
 'basil',
 'arugula',
@@ -726,7 +726,13 @@ QUANTITIES = [
     'swimming in',
     'scattered',
     'spread out',
-    'garnished with'
+    'garnished with',
+    'many',
+    'much',
+    'more',
+    'less',
+    'least',
+    'a little bit of'
 ]
 
 BLACKLIST    = list(set([ stemmer.stem(x) for x in [] ]))

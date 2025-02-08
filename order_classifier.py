@@ -1,10 +1,4 @@
-from var import *
-from preprocessor import *
-from nltk.stem import PorterStemmer
-
-import re
-import json
-import random
+from libraries import *
 
 stemmer = PorterStemmer()
 
@@ -36,7 +30,7 @@ class OrderFormatter:
         for bracket in matches:
             entity, text = bracket[1: -1].split(" ", 1) 
             
-            if random.random() <= 0.5:
+            if random.random() <= 0.75:
                 if entity == "TOPPING":
                     text = random.sample(TOPPINGS, 1)[0]
                 elif entity == "STYLE":
@@ -111,7 +105,7 @@ class OrderFormatter:
                 token = token.lower()
                 self.x.append(token)
                 
-                if random.random() > 0.2:
+                if random.random() > 0.4:
                     self.vocabulary.add(token)
 
                 if stemmer.stem(token) in PIZZA_WORDS:
@@ -139,16 +133,14 @@ class OrderFormatter:
         TOP = self.normalizer.normalize(TOP) ## PREPROCESSING STEP
         TOP = self.resolve_leaf_brackets(TOP)
         TOP = self.normalizer.reorganize_spaces(TOP)
-        original = TOP
         TOP = self.remove_keywords(TOP, ["TOPPING", "NUMBER", "QUANTITY", "STYLE", "DRINKTYPE", "CONTAINERTYPE"])
         TOP = self.remove_keywords(TOP, ["COMPLEXTOPPING"])
         TOP = self.remove_keywords(TOP, ["NOT"])
         TOP = self.include_classes(TOP, ["PIZZAORDER", "DRINKORDER"])
         TOP = self.remove_keywords(TOP, ["ORDER"])
         TOP = self.normalizer.reorganize_spaces(TOP)
-
         
-        if random.random() < 0.5:
+        if random.random() < 0.4:
             TOP = self.apply_shuffling(TOP)
 
         self.formulate_test_case(TOP)
